@@ -1,0 +1,161 @@
+name: Build and Release FFmpeg GUI
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Build executable
+      run: |
+        pyinstaller --onefile --windowed --name "FFmpeg_GUI" FFmpeg-GUI.py
+        
+    - name: Create portable build
+      run: |
+        mkdir FFmpeg_GUI_Portable
+        copy dist\FFmpeg_GUI.exe FFmpeg_GUI_Portable\
+        echo "# FFmpeg GUI - Portable Version" > FFmpeg_GUI_Portable\README.md
+        echo "" >> FFmpeg_GUI_Portable\README.md
+        echo "## Istruzioni:" >> FFmpeg_GUI_Portable\README.md
+        echo "1. Scarica FFmpeg da https://ffmpeg.org/download.html" >> FFmpeg_GUI_Portable\README.md
+        echo "2. Estrai ffmpeg.exe nella stessa cartella di questo eseguibile" >> FFmpeg_GUI_Portable\README.md
+        echo "3. Oppure assicurati che FFmpeg sia nel PATH del sistema" >> FFmpeg_GUI_Portable\README.md
+        echo "4. Esegui FFmpeg_GUI.exe" >> FFmpeg_GUI_Portable\README.md
+        
+    - name: Create installer build script
+      run: |
+        echo '@echo off' > build_installer.bat
+        echo 'echo Building FFmpeg GUI Installer...' >> build_installer.bat
+        echo 'pyinstaller ffmpeg_gui.spec' >> build_installer.bat
+        echo 'echo Build completed!' >> build_installer.bat
+        echo 'pause' >> build_installer.bat
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ffmpeg-gui-windows
+        path: |
+          dist/
+          FFmpeg_GUI_Portable/
+          build_installer.bat
+          
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-tk
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Build executable
+      run: |
+        pyinstaller --onefile --name "ffmpeg_gui_linux" ffmpeg_gui.py
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ffmpeg-gui-linux
+        path: dist/
+        
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download Windows artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: ffmpeg-gui-windows
+        path: windows-build/
+        
+    - name: Download Linux artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: ffmpeg-gui-linux
+        path: linux-build/
+        
+    - name: Create release archives
+      run: |
+        # Windows portable
+        cd windows-build
+        zip -r ../FFmpeg_GUI_Windows_Portable_${{ github.ref_name }}.zip FFmpeg_GUI_Portable/
+        
+        # Windows installer files
+        zip -r ../FFmpeg_GUI_Windows_Installer_${{ github.ref_name }}.zip dist/ build_installer.bat
+        
+        # Linux
+        cd ../linux-build
+        tar -czf ../FFmpeg_GUI_Linux_${{ github.ref_name }}.tar.gz dist/
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          FFmpeg_GUI_Windows_Portable_${{ github.ref_name }}.zip
+          FFmpeg_GUI_Windows_Installer_${{ github.ref_name }}.zip
+          FFmpeg_GUI_Linux_${{ github.ref_name }}.tar.gz
+        body: |
+          ## FFmpeg GUI Release ${{ github.ref_name }}
+          
+          ### Windows
+          - **Portable**: Scarica `FFmpeg_GUI_Windows_Portable_${{ github.ref_name }}.zip`
+          - **Installer**: Scarica `FFmpeg_GUI_Windows_Installer_${{ github.ref_name }}.zip` e esegui `build_installer.bat`
+          
+          ### Linux
+          - Scarica `FFmpeg_GUI_Linux_${{ github.ref_name }}.tar.gz`
+          
+          ### Requisiti
+          - FFmpeg deve essere installato e accessibile nel PATH, oppure copiato nella stessa cartella dell'eseguibile
+          - Windows: Supporto CUDA per accelerazione hardware (opzionale ma raccomandato)
+          
+          ### Funzionalità
+          - ✅ Interfaccia grafica moderna e intuitiva
+          - ✅ Supporto codec AV1, H265, H264 con accelerazione NVENC
+          - ✅ Ridimensionamento video automatico
+          - ✅ Anteprima comando FFmpeg
+          - ✅ Log in tempo reale dell'encoding
+          - ✅ Drag & drop dei file (dove supportato)
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
