@@ -87,7 +87,7 @@ jobs:
         pyinstaller --onefile --name "ffmpeg_gui_linux" ffmpeg_gui.py
         
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ffmpeg-gui-linux
         path: dist/
