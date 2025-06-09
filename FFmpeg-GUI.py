@@ -6,27 +6,21 @@ import threading
 import os
 import sys
 import shutil
-import shlex # NUOVO: Importato per dividere la stringa di comando in modo sicuro
+import shlex
 
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
 # -----------------------------------------------------------------------------
 # CLASSE PRINCIPALE - AppFrame
 # -----------------------------------------------------------------------------
-# Sostituisci la vecchia classe AppFrame con questa
-
-# Sostituisci la vecchia classe AppFrame con questa
 
 class AppFrame(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
-        # (Le variabili di stato rimangono le stesse)
         self.master = master
         self.ffmpeg_process = None
         self.is_running = False
-        self.file_queue = []
 
-        # (La configurazione del layout è la stessa)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(4, weight=1)
 
@@ -104,8 +98,6 @@ class AppFrame(ctk.CTkFrame):
 
     def toggle_manual_edit_mode(self):
         is_manual_mode = self.manual_edit_switch.get() == 1
-        
-        # Aggiorna l'anteprima PRIMA di cambiare stato, per avere un template di partenza
         self.update_command_preview(force_template=is_manual_mode)
         
         if is_manual_mode:
@@ -127,10 +119,11 @@ class AppFrame(ctk.CTkFrame):
             self.log("INFO: Modalità manuale disattivata.\n")
 
     def start_compression(self):
-        self.file_queue = self.file_list_box.get("1.0", tk.END).strip().split("\n")
-        self.file_queue = [f for f in self.file_queue if f]
+        # La "source of truth" è sempre il contenuto del textbox al momento del click
+        file_queue = self.file_list_box.get("1.0", tk.END).strip().split("\n")
+        file_queue = [f for f in file_queue if f]
 
-        if not self.file_queue:
+        if not file_queue:
             self.log("ERRORE: Nessun file nella lista.\n")
             return
             
@@ -138,36 +131,28 @@ class AppFrame(ctk.CTkFrame):
         self.toggle_ui_state(running=True)
         
         if self.manual_edit_switch.get() == 1:
-            thread = threading.Thread(target=self.process_manual_queue, daemon=True) # MODIFICATO
+            thread = threading.Thread(target=self.process_manual_queue, args=(file_queue,), daemon=True)
         else:
-            thread = threading.Thread(target=self.process_auto_queue, daemon=True)
+            thread = threading.Thread(target=self.process_auto_queue, args=(file_queue,), daemon=True)
         
         thread.start()
 
-    def process_manual_queue(self):
-        # Logica per modalità manuale (coda di file con template)
+    def process_manual_queue(self, file_queue):
         command_template = self.command_preview.get("1.0", tk.END).strip()
         
-        # Validazione del template
         if "%%INPUT%%" not in command_template or "%%OUTPUT%%" not in command_template:
             self.log("ERRORE: Il template in modalità manuale deve contenere i segnaposto %%INPUT%% e %%OUTPUT%%.\n")
             self.toggle_ui_state(running=False)
             return
 
-        total_files = len(self.file_queue)
+        total_files = len(file_queue)
         self.progress_bar.configure(mode="determinate")
 
-        for i, input_filepath in enumerate(self.file_queue):
+        for i, input_filepath in enumerate(file_queue):
             if not self.is_running: break
-            
             self.progress_label.configure(text=f"Processando file {i+1} di {total_files}: {os.path.basename(input_filepath)}")
-            
-            # Genera il percorso di output e sostituisce i segnaposto
             output_filepath = self.generate_manual_output_path(input_filepath)
-            # Aggiunge le virgolette per sicurezza con i percorsi che contengono spazi
-            concrete_command_str = command_template.replace("%%INPUT%%", f'"{input_filepath}"')
-            concrete_command_str = concrete_command_str.replace("%%OUTPUT%%", f'"{output_filepath}"')
-
+            concrete_command_str = command_template.replace("%%INPUT%%", f'"{input_filepath}"').replace("%%OUTPUT%%", f'"{output_filepath}"')
             self.log(f"\n{'='*20}\nEsecuzione per {input_filepath}:\n{concrete_command_str}\n{'='*20}\n")
             
             try:
@@ -181,18 +166,16 @@ class AppFrame(ctk.CTkFrame):
                 self.log(f"Errore imprevisto durante l'elaborazione di {input_filepath}: {e}\n")
 
             if not self.is_running: break
-
             progress = (i + 1) / total_files
             self.progress_bar.set(progress)
 
         self.log("\n--- Processo della coda manuale terminato. ---\n")
         self.toggle_ui_state(running=False)
 
-    def process_auto_queue(self):
-        # Questa è la vecchia funzione 'process_queue'
-        total_files = len(self.file_queue)
+    def process_auto_queue(self, file_queue):
+        total_files = len(file_queue)
         self.progress_bar.configure(mode="determinate")
-        for i, filepath in enumerate(self.file_queue):
+        for i, filepath in enumerate(file_queue):
             if not self.is_running: break
             self.progress_label.configure(text=f"Processando file {i+1} di {total_files}: {os.path.basename(filepath)}")
             self.log(f"\n{'='*20}\nInizio elaborazione file {i+1}/{total_files}: {filepath}\n{'='*20}\n")
@@ -212,37 +195,46 @@ class AppFrame(ctk.CTkFrame):
         self.toggle_ui_state(running=False)
 
     def generate_manual_output_path(self, input_path):
-        # Crea un nome di output generico per la modalità manuale
+        codec = self.codec_var.get()
         base, ext = os.path.splitext(input_path)
-        return f"{base}_converted{ext}"
+        return f"{base}_converted_{codec}{ext}"
 
     def update_command_preview(self, force_template=False):
         if self.manual_edit_switch.get() == 1 and not force_template:
             return
 
-        first_file = self.file_queue[0] if self.file_queue else None
-        
-        # Se non c'è un file, non fare nulla
-        if not first_file:
+        # Legge la lista di file direttamente dal textbox
+        file_list = self.file_list_box.get("1.0", tk.END).strip().split("\n")
+        file_list = [f for f in file_list if f]
+
+        if not file_list:
             self.command_preview.configure(state="normal")
             self.command_preview.delete("1.0", tk.END)
-            self.command_preview.insert("1.0", "Aggiungi uno o più file...")
+            self.command_preview.insert("1.0", "Aggiungi uno o più file per vedere l'anteprima...")
             if not self.manual_edit_switch.get() == 1:
                 self.command_preview.configure(state="disabled")
             return
-            
+        
+        first_file = file_list[0]
         command_list = self.build_command(first_file)
         if not command_list: return
-            
-        preview_str = subprocess.list2cmdline(command_list)
-
+        
+        # Se stiamo forzando la creazione del template...
         if force_template:
-            input_file_str = f'"{first_file}"'
-            # Genera il nome output specifico per il primo file per poterlo sostituire
-            output_file_str = f'"{command_list[-1]}"'
-            
-            preview_str = preview_str.replace(input_file_str, "%%INPUT%%")
-            preview_str = preview_str.replace(output_file_str, "%%OUTPUT%%")
+            # 1. Trova l'indice dell'input file e dell'output file nella lista
+            try:
+                input_index = command_list.index(first_file)
+                output_index = len(command_list) - 1 # L'output è sempre l'ultimo
+                
+                # 2. Sostituisci gli elementi nella lista con i segnaposto
+                command_list[input_index] = "%%INPUT%%"
+                command_list[output_index] = "%%OUTPUT%%"
+            except ValueError:
+                self.log("ERRORE: Impossibile creare il template del comando.\n")
+                return
+        
+        # 3. Genera la stringa di anteprima dalla lista (modificata o originale)
+        preview_str = subprocess.list2cmdline(command_list)
 
         self.command_preview.configure(state="normal")
         self.command_preview.delete("1.0", tk.END)
@@ -251,19 +243,17 @@ class AppFrame(ctk.CTkFrame):
         if not self.manual_edit_switch.get() == 1:
             self.command_preview.configure(state="disabled")
 
-    # (Tutte le altre funzioni di supporto rimangono invariate)
     def add_files_to_list(self, files):
-        current_files = self.file_list_box.get("1.0", tk.END)
+        current_files_text = self.file_list_box.get("1.0", tk.END)
         self.file_list_box.configure(state="normal")
         for f in files:
-            if f not in current_files:
-                self.file_queue.append(f)
+            # Aggiunge solo se non già presente nel testo
+            if f not in current_files_text:
                 self.file_list_box.insert(tk.END, f + "\n")
         self.file_list_box.configure(state="disabled")
         self.update_command_preview()
 
     def clear_file_list(self):
-        self.file_queue = []
         self.file_list_box.configure(state="normal")
         self.file_list_box.delete("1.0", tk.END)
         self.file_list_box.configure(state="disabled")
@@ -302,7 +292,10 @@ class AppFrame(ctk.CTkFrame):
 
     def build_command(self, input_file):
         ffmpeg_path = self.find_ffmpeg()
-        if not ffmpeg_path: return None
+        if not ffmpeg_path: 
+            self.log("ERRORE: ffmpeg.exe non trovato. Assicurati sia nel PATH o nella cartella dell'app.\n")
+            return None
+
         codec = self.codec_var.get()
         preset = self.preset_var.get()
         cq_param = str(int(self.cq_slider.get()))
@@ -310,8 +303,10 @@ class AppFrame(ctk.CTkFrame):
         input_dir, input_filename = os.path.split(input_file)
         filename_base, file_ext = os.path.splitext(input_filename)
         output_filename = os.path.join(input_dir, f"{filename_base}_{codec}_CQ{cq_param}{file_ext}")
+        
         base_cmd = ['ffmpeg.exe', '-y', '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', '-i', input_file]
         video_opts = []
+
         if codec == 'AV1':
             video_opts = ['-c:v', 'av1_nvenc', '-preset', preset, '-rc:v', 'vbr', '-cq:v', cq_param]
             if scale != "Nessuno": video_opts.extend(['-vf', f'scale_cuda=-2:{scale.replace("p","")}'])
@@ -319,6 +314,7 @@ class AppFrame(ctk.CTkFrame):
             video_opts = ['-c:v', 'hevc_nvenc', '-preset', preset, '-rc:v', 'vbr_hq', '-cq:v', cq_param]
         elif codec == 'H264':
             video_opts = ['-c:v', 'h264_nvenc', '-preset', preset, '-rc:v', 'vbr_hq', '-cq:v', cq_param]
+            
         video_opts.extend(['-rc-lookahead', '32', '-spatial-aq', '1', '-temporal-aq', '1'])
         audio_opts = ['-c:a', 'copy']
         output_opts = [output_filename]
@@ -362,8 +358,8 @@ if __name__ == "__main__":
     ctk.set_appearance_mode("Dark")
     ctk.set_default_color_theme("blue")
     root.configure(bg="#242424")
-    root.title("FFmpeg GUI Moderna")
-    root.geometry("850x950")
+    root.title("FFmpeg GUI")
+    root.geometry("900x900")
     root.grid_columnconfigure(0, weight=1)
     root.grid_rowconfigure(0, weight=1)
     app_frame = AppFrame(master=root)
