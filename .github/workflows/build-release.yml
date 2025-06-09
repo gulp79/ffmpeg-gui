@@ -28,7 +28,7 @@ jobs:
         
     - name: Build executable
       run: |
-        pyinstaller --onefile --windowed --name "FFmpeg_GUI" FFmpeg-GUI.py
+        pyinstaller --noconsole --onefile --icon="icona.ico" --windowed --name "FFmpeg_GUI" --collect-all customtkinter --collect-all tkinterdnd2 FFmpeg-GUI.py
         
     - name: Create portable build
       run: |
@@ -84,7 +84,7 @@ jobs:
         
     - name: Build executable
       run: |
-        pyinstaller --onefile --name "ffmpeg_gui_linux" ffmpeg_gui.py
+        pyinstaller --noconsole --onefile --icon="icona.ico" --windowed --name "FFmpeg_GUI" --collect-all customtkinter --collect-all tkinterdnd2 FFmpeg-GUI.py
         
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
