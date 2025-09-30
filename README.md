@@ -2,7 +2,7 @@
 
 Una semplicissima interfaccia grafica per FFmpeg con supporto per codifica AV1, H265 e H264 con accelerazione hardware CUDA.
 
-![FFmpeg GUI Screenshot](https://github.com/user-attachments/assets/97f741b7-32df-4715-a7ea-0f88b4e98d45)
+![FFmpeg GUI Screenshot](https://github.com/user-attachments/assets/6c34b84d-6cb2-4f4c-80f5-85891cf5f626)
 
 
 ## ✨ Caratteristiche
@@ -49,7 +49,18 @@ Una semplicissima interfaccia grafica per FFmpeg con supporto per codifica AV1, 
 
 ## 🛠️ Compilazione
 
-### Windows
+### Windows con Nuitka (Coverte il codice Python in C o C++ che poi viene compilato)
+
+1. **Compila l'eseguibile**:
+   ```batch
+   pip install nuitka ordered-set
+   nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=tk-inter --windows-icon-from-ico=icona.ico FFmpeg-GUI.py
+   ```
+
+2. **Output**:
+   - `FFmpeg_GUI.exe` - Eseguibile
+   - 
+### Windows con Pyinstaller (Impacchetta l'interprete Python, il tuo codice sorgente in un unico pacchetto eseguibile)
 
 1. **Compila l'eseguibile**:
    ```batch
@@ -188,10 +199,8 @@ python ffmpeg_gui.py
 
 ## 📋 TODO & Roadmap
 
-- [ ] **Batch Processing**: Codifica multipli file in coda
 - [ ] **Profili Personalizzati**: Salva e carica configurazioni
 - [ ] **Anteprima Video**: Preview del file di input
-- [ ] **Progress Bar Intelligente**: Parsing dell'output FFmpeg per progresso reale
 - [ ] **Supporto GPU AMD**: Encoder VCE/AMF
 - [ ] **Filtri Video**: Crop, rotate, deinterlace
 - [ ] **Audio Settings**: Codec, bitrate, channels
