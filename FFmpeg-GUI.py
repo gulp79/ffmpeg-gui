@@ -36,7 +36,7 @@ COLOR_PALETTE = {
 # -----------------------------------------------------------------------------
 
 class AppFrame(ctk.CTkFrame):
-    def __init__(self, master):
+    def __init__(self, master, initial_files=None):
         super().__init__(master, fg_color=COLOR_PALETTE["app_bg"])
         self.master = master
         self.ffmpeg_process = None
@@ -145,6 +145,9 @@ class AppFrame(ctk.CTkFrame):
         self.progress_bar = ctk.CTkProgressBar(self, mode='determinate', progress_color=COLOR_PALETTE["accent_green"], fg_color=COLOR_PALETTE["secondary_button"])
         self.progress_bar.grid(row=7, column=0, padx=20, pady=(0, 20), sticky="ew")
         self.progress_bar.set(0)
+
+        if initial_files:
+            self.add_files_to_list(initial_files)
         
         self.update_command_preview()
 
@@ -549,7 +552,8 @@ if __name__ == "__main__":
     root.grid_columnconfigure(0, weight=1)
     root.grid_rowconfigure(0, weight=1)
 
-    app_frame = AppFrame(master=root)
+    initial_files_from_args = sys.argv[1:]
+    app_frame = AppFrame(master=root, initial_files=initial_files_from_args)
     app_frame.grid(row=0, column=0, sticky="nsew")
     
     root.protocol("WM_DELETE_WINDOW", app_frame.on_closing)
