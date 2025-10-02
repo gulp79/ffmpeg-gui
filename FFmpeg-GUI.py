@@ -3,6 +3,7 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog
+import ctypes
 import subprocess
 import threading
 import os
@@ -35,10 +36,27 @@ COLOR_PALETTE = {
 # CLASSE PRINCIPALE - AppFrame
 # -----------------------------------------------------------------------------
 
-class AppFrame(ctk.CTkFrame):
+class AppWindow(ctk.CTkToplevel):
     def __init__(self, master, initial_files=None):
-        super().__init__(master, fg_color=COLOR_PALETTE["app_bg"])
-        self.master = master
+        super().__init__(master)
+        # Non abbiamo più bisogno di fg_color qui, Toplevel ha già il suo sfondo
+        # self.master non è più necessario, perché Toplevel gestisce il suo "master"
+        
+        # --- IMPOSTAZIONI FINESTRA (spostate qui) ---
+        self.title("FFmpeg GUI")
+        self.geometry("900x900")
+        
+        # Configura il layout della griglia direttamente sulla finestra
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(4, weight=1)
+
+        self.ffmpeg_process = None
+        self.is_running = False
+        
+        # NOTA: Tutti i widget che prima venivano aggiunti a 'self' (che era un Frame)
+        # ora verranno aggiunti a 'self' (che è una Toplevel window), quindi il resto 
+        # del codice __init__ rimane quasi identico.
+        # Esempio: input_frame = ctk.CTkFrame(self, ...) rimane uguale.
         self.ffmpeg_process = None
         self.is_running = False
 
@@ -542,19 +560,33 @@ class AppFrame(ctk.CTkFrame):
 # BLOCCO DI AVVIO DELL'APPLICAZIONE
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
-    # TkinterDnD.Tk() è necessario per il drag and drop
-    root = TkinterDnD.Tk() 
+    # Imposta la modalità di aspetto prima di creare qualsiasi finestra
     ctk.set_appearance_mode("Dark")
     
-    root.title("FFmpeg GUI")
-    root.geometry("900x900")
-    
-    root.grid_columnconfigure(0, weight=1)
-    root.grid_rowconfigure(0, weight=1)
+    # Crea la root window di TkinterDnD, che rimarrà nascosta
+    hidden_root = TkinterDnD.Tk()
+    hidden_root.withdraw() # Nascondi la finestra root
 
+    # Crea la nostra finestra Toplevel personalizzata, che sarà l'interfaccia principale
     initial_files_from_args = sys.argv[1:]
-    app_frame = AppFrame(master=root, initial_files=initial_files_from_args)
-    app_frame.grid(row=0, column=0, sticky="nsew")
+    app_window = AppWindow(master=hidden_root, initial_files=initial_files_from_args)
+
+    # Prova a impostare l'icona sulla finestra Tkinter sottostante
+    def set_window_icon():
+        try:
+            app_window.wm_iconbitmap('icona.ico')
+        except tk.TclError:
+            print("Icona 'icona.ico' non trovata.")
+
+    # Imposta l'icona dopo che la finestra è stata completamente creata
+    app_window.after(100, set_window_icon)
+
+    # Gestisci la chiusura: quando si chiude la AppWindow, si chiude anche la root nascosta
+    def on_closing():
+        app_window.on_closing() # Chiama il metodo di cleanup della nostra app
+        hidden_root.destroy()   # Distrugge la root nascosta
+
+    app_window.protocol("WM_DELETE_WINDOW", on_closing)
     
-    root.protocol("WM_DELETE_WINDOW", app_frame.on_closing)
-    root.mainloop()
+    # Avvia il loop principale (sulla finestra nascosta, che gestirà gli eventi)
+    hidden_root.mainloop()
