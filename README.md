@@ -70,7 +70,6 @@ Una semplicissima interfaccia grafica per FFmpeg con supporto per codifica AV1, 
 
 2. **Output**:
    - `dist/FFmpeg_GUI.exe` - Eseguibile
-   - 
 
 ## 📦 Installazione FFmpeg
 
@@ -128,12 +127,12 @@ sudo port install ffmpeg
 
 **AV1 1080p CQ18**:
 ```bash
-ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i "input.mp4" -vf "scale_cuda=-2:1080" -c:v av1_nvenc -preset p4 -rc:v vbr -cq:v 18 -rc-lookahead 32 -spatial-aq 1 -temporal-aq 1 -c:a copy "output_av1_cq18.mp4"
+ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i "input.mp4" -vf "scale_cuda=-2:1080" -c:v av1_nvenc -preset p4 -rc:v vbr -cq:v 18 -rc-lookahead 32 -spatial-aq 1 -temporal-aq 1 -g 30 -bf 2 -movflags +faststart -c:a copy "output_av1_cq18.mp4"
 ```
 
 **H265 720p CQ23**:
 ```bash
-ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i "input.mp4" -vf "scale_cuda=-2:720" -c:v hevc_nvenc -preset p6 -rc:v vbr_hq -cq:v 23 -rc-lookahead 32 -spatial-aq 1 -temporal-aq 1 -c:a copy "output_h265_cq23.mp4"
+ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i "input.mp4" -vf "scale_cuda=-2:720" -c:v hevc_nvenc -preset p6 -rc:v vbr_hq -cq:v 23 -rc-lookahead 32 -spatial-aq 1 -temporal-aq 1 -g 30 -bf 2 -movflags +faststart -c:a copy "output_h265_cq23.mp4"
 ```
 
 ## ⚙️ Requisiti di Sistema
