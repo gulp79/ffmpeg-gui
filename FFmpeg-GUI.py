@@ -93,7 +93,7 @@ class AppWindow(ctk.CTkToplevel):
         self.codec_menu.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
 
         ctk.CTkLabel(self.options_frame, text="Preset:", anchor="w", text_color=COLOR_PALETTE["text"]).grid(row=0, column=1, padx=20, pady=10, sticky="ew")
-        self.preset_var = ctk.StringVar(value="p4")
+        self.preset_var = ctk.StringVar(value="p5")
         self.preset_menu = ctk.CTkOptionMenu(self.options_frame, values=["p1", "p2", "p3", "p4", "p5", "p6", "p7"], variable=self.preset_var, command=lambda _: self.update_command_preview(), fg_color=COLOR_PALETTE["accent_green"], button_color=COLOR_PALETTE["accent_green"], button_hover_color=COLOR_PALETTE["accent_green_hover"], text_color=COLOR_PALETTE["text_dark"])
         self.preset_menu.grid(row=1, column=1, padx=20, pady=5, sticky="ew")
 
@@ -475,7 +475,7 @@ class AppWindow(ctk.CTkToplevel):
             return [
                 ffmpeg_path, '-y', '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', 
                 '-i', input_file, '-c:v', 'av1_nvenc', '-vf', 'scale_cuda=-2:576', 
-                '-preset', 'p1', '-cq', '0', '-tune', 'll', '-an', output_file
+                '-preset', 'p1', '-cq', '0', '-tune', 'll', '-g', '30', '-an', output_file
             ]
 
         preset = self.preset_var.get()
@@ -501,7 +501,7 @@ class AppWindow(ctk.CTkToplevel):
         if codec == 'AV1' and scale != "Nessuno" and scale_height:
             video_opts.extend(['-vf', f'scale_cuda=-2:{scale_height}'])
             
-        video_opts.extend(['-rc-lookahead', '32', '-spatial-aq', '1', '-temporal-aq', '1', '-g', '30', '-bf', '2', '-movflags', '+faststart'])
+        video_opts.extend(['-tune', 'hq', '-rc-lookahead', '32', '-spatial-aq', '1', '-temporal-aq', '1', '-g', '30', '-bf', '2', '-movflags', '+faststart'])
         audio_opts = ['-c:a', 'copy']
         
         return base_cmd + video_opts + audio_opts + [output_file]
