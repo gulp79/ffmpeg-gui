@@ -4,7 +4,8 @@ Una semplicissima interfaccia grafica per FFmpeg con supporto per codifica AV1, 
 
 ![FFmpeg GUI Screenshot](https://github.com/user-attachments/assets/99f838d6-08bf-4cdd-b23f-6d8f2aef75c1)
 
-
+[![Latest Downloads](https://img.shields.io/github/downloads/gulp79/ffmpeg-gui/latest/total
+)](https://github.com/gulp79/ffmpeg-gui/releases) [![GitHub release](https://img.shields.io/github/v/release/gulp79/ffmpeg-gui?include_prereleases)](https://github.com/gulp79/ffmpeg-gui/releases/latest)
 
 ## ✨ Caratteristiche
 
