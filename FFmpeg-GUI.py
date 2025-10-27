@@ -475,7 +475,7 @@ class AppWindow(ctk.CTkToplevel):
             return [
                 ffmpeg_path, '-y', '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', 
                 '-i', input_file, '-c:v', 'av1_nvenc', '-vf', 'scale_cuda=-2:576', 
-                '-preset', 'p1', '-cq', '0', '-tune', 'll', '-g', '30', '-c:a copy', output_file
+                '-preset', 'p1', '-cq', '0', '-tune', 'll', '-g', '30', '-c:a', 'copy', output_file
             ]
 
         preset = self.preset_var.get()
@@ -590,4 +590,5 @@ if __name__ == "__main__":
     
     # Avvia il loop principale (sulla finestra nascosta, che gestirà gli eventi)
     hidden_root.mainloop()
+
 
