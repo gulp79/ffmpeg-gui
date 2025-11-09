@@ -12,6 +12,8 @@ import shutil
 import shlex
 import re
 from pathlib import Path
+import platform
+IS_WIN = (platform.system() == 'Windows')
 
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
@@ -103,6 +105,10 @@ class AppWindow(ctk.CTkToplevel):
         self.cq_slider.grid(row=1, column=2, padx=20, pady=5, sticky="ew")
         self.cq_label = ctk.CTkLabel(self.options_frame, text="0", font=ctk.CTkFont(size=14, weight="bold"), text_color=COLOR_PALETTE["accent_green"])
         self.cq_label.grid(row=1, column=3, padx=10, pady=5)
+        # Switch: Usa NVENC (se disponibile)
+        self.nvenc_switch = ctk.CTkSwitch(self.options_frame, text="Usa NVENC (se disponibile)", variable=tk.IntVar(value=1), command=self.update_command_preview, progress_color=COLOR_PALETTE["accent_green"])
+        self.nvenc_switch.grid(row=2, column=0, padx=20, pady=(0,10), sticky="w")
+
         
         # --- Frame Scaling ---
         self.scaling_frame = ctk.CTkFrame(self, fg_color=COLOR_PALETTE["frame_bg"])
@@ -187,15 +193,18 @@ class AppWindow(ctk.CTkToplevel):
         self.log(f"\n{'='*20}\nEsecuzione comando:\n{' '.join(shlex.quote(c) for c in command)}\n{'='*20}\n")
         
         try:
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo = None
+            if IS_WIN and hasattr(subprocess, 'STARTUPINFO'):
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             self.ffmpeg_process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                stdin=subprocess.PIPE,
                 universal_newlines=True,
                 encoding='utf-8',
-                startupinfo=startupinfo
+                **({'startupinfo': startupinfo} if startupinfo else {})
             )
 
             duration_seconds = 0.0
@@ -358,7 +367,11 @@ class AppWindow(ctk.CTkToplevel):
                 force_template = False
         
         # subprocess.list2cmdline è specifico per Windows e gestisce correttamente gli spazi
-        preview_str = subprocess.list2cmdline(command_list)
+        import shlex as _shlex
+        if IS_WIN:
+            preview_str = subprocess.list2cmdline(command_list)
+        else:
+            preview_str = _shlex.join(command_list)
 
         self.command_preview.configure(state="normal")
         self.command_preview.delete("1.0", tk.END)
@@ -462,49 +475,156 @@ class AppWindow(ctk.CTkToplevel):
             self.progress_label.configure(text="Pronto.")
             self.progress_bar.set(0)
 
+    
+    def _ffmpeg_has_filter(self, name:str)->bool:
+        try:
+            out = subprocess.check_output([self.find_ffmpeg() or 'ffmpeg', '-hide_banner', '-filters'], stderr=subprocess.STDOUT, text=True)
+            return any((' ' + name + ' ') in line or line.strip().startswith(name) for line in out.splitlines())
+        except Exception:
+            return False
+
+    def _ffmpeg_has_encoder(self, name:str)->bool:
+        try:
+            out = subprocess.check_output([self.find_ffmpeg() or 'ffmpeg','-hide_banner','-encoders'], stderr=subprocess.STDOUT, text=True)
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts)>=2 and parts[1]==name:
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def _ffmpeg_hwaccels(self):
+        try:
+            out = subprocess.check_output([self.find_ffmpeg() or 'ffmpeg','-hide_banner','-hwaccels'], stderr=subprocess.STDOUT, text=True)
+            return set(x.strip() for x in out.splitlines() if x.strip() and not x.startswith('Hardware'))
+        except Exception:
+            return set()
+
     def build_command(self, input_file):
         ffmpeg_path = self.find_ffmpeg()
-        if not ffmpeg_path: 
-            self.log("ERRORE: ffmpeg.exe non trovato. Assicurati sia nel PATH o nella cartella dell'app.\n")
+        if not ffmpeg_path:
+            self.log("ERRORE: ffmpeg non trovato. Assicurati sia nel PATH o nella cartella dell'app.\n")
             return None
 
         codec = self.codec_var.get()
         output_file = str(self.generate_output_path(Path(input_file)))
-        
-        if codec == 'Crea proxy':
-            return [
-                ffmpeg_path, '-y', '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', 
-                '-i', input_file, '-c:v', 'av1_nvenc', '-vf', 'scale_cuda=-2:576', 
-                '-preset', 'p1', '-cq', '0', '-tune', 'll', '-g', '30', '-c:a', 'copy', output_file
-            ]
 
-        preset = self.preset_var.get()
-        cq_param = str(int(self.cq_slider.get()))
-        scale = self.scale_var.get()
-        
-        base_cmd = [ffmpeg_path, '-y', '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', '-i', input_file]
-        video_opts = []
+        use_nvenc = 1
+        try:
+            use_nvenc = int(self.nvenc_switch.get())
+        except Exception:
+            use_nvenc = 1
 
-        scale_map = {"4k": "2160", "2k": "1440", "1080p": "1080", "720p": "720", "576p": "576", "480p": "480"}
-        scale_height = scale_map.get(scale)
-
-        codec_settings = {
-            'AV1': {'c:v': 'av1_nvenc', 'rc:v': 'vbr'},
-            'H265': {'c:v': 'hevc_nvenc', 'rc:v': 'vbr_hq'},
-            'H264': {'c:v': 'h264_nvenc', 'rc:v': 'vbr_hq'}
+        # Helpers
+        has_nvenc = {
+            'h264': self._ffmpeg_has_encoder('h264_nvenc'),
+            'hevc': self._ffmpeg_has_encoder('hevc_nvenc'),
+            'av1':  self._ffmpeg_has_encoder('av1_nvenc'),
+        'h264_vaapi': self._ffmpeg_has_encoder('h264_vaapi'),
+        'hevc_vaapi': self._ffmpeg_has_encoder('hevc_vaapi'),
+        'av1_vaapi':  self._ffmpeg_has_encoder('av1_vaapi'),
         }
-        
-        if codec in codec_settings:
-            settings = codec_settings[codec]
-            video_opts.extend(['-c:v', settings['c:v'], '-preset', preset, '-rc', settings['rc:v'], '-cq', cq_param])
-        
-        if codec == 'AV1' and scale != "Nessuno" and scale_height:
-            video_opts.extend(['-vf', f'scale_cuda=-2:{scale_height}'])
-            
-        video_opts.extend(['-tune', 'hq', '-rc-lookahead', '32', '-spatial-aq', '1', '-temporal-aq', '1', '-g', '30', '-bf', '2', '-movflags', '+faststart'])
+        has_sw = {
+            'h264': self._ffmpeg_has_encoder('libx264'),
+            'hevc': self._ffmpeg_has_encoder('libx265'),
+            'av1aom': self._ffmpeg_has_encoder('libaom-av1'),
+            'av1svt': self._ffmpeg_has_encoder('libsvtav1'),
+        }
+        has_filter = {
+            'scale_cuda': self._ffmpeg_has_filter('scale_cuda'),
+            'scale_npp': self._ffmpeg_has_filter('scale_npp'),
+            'scale': self._ffmpeg_has_filter('scale'),
+            'scale_vaapi': self._ffmpeg_has_filter('scale_vaapi')
+        }
+
+        base_cmd = [ffmpeg_path, '-y', '-i', input_file]
+
+        # Read UI state
+        preset = self.preset_var.get()
+        cq = str(int(self.cq_slider.get()))
+        scale = self.scale_var.get()
+        scale_height = None
+        if codec == 'AV1':
+            mapping = {'Nessuno': None, '4k (2160p)':2160, '2k (1440p)':1440, '1080p':1080, '720p':720, '576p':576, '480p':480}
+            scale_height = mapping.get(scale)
+
+        # Proxy mode quick path
+        if codec == 'Crea proxy':
+            # prefer NVENC h264 at 576p
+            vargs = []
+            if use_nvenc and has_nvenc['h264']:
+                vcodec = 'h264_nvenc'
+                vmode = ['-c:v', vcodec, '-preset', 'p7', '-rc', 'constqp', '-qp', '30', '-tune', 'll', '-g', '30']
+            else:
+                vcodec = 'libx264' if has_sw['h264'] else 'libx265'
+                vmode = ['-c:v', vcodec, '-preset', 'veryfast', '-crf', '30', '-g', '30']
+            # scaling
+            if has_filter['scale_cuda'] and use_nvenc:
+                vmode += ['-vf', 'scale_cuda=-2:576']
+            elif has_filter['scale']:
+                vmode += ['-vf', 'scale=-2:576']
+            audio = ['-c:a', 'copy']
+            container_extra = ['-movflags', '+faststart']
+            return base_cmd + vmode + audio + container_extra + [output_file]
+
+        # Non-proxy modes
+        video_opts = []
         audio_opts = ['-c:a', 'copy']
-        
-        return base_cmd + video_opts + audio_opts + [output_file]
+        container_extra = ['-movflags', '+faststart']
+
+        def add_scaler(height):
+            nonlocal video_opts
+            if height is None:
+                return
+            if use_nvenc and has_filter['scale_cuda']:
+                video_opts += ['-vf', f'scale_cuda=-2:{height}']
+            elif (has_nvenc.get('h264') or has_nvenc.get('hevc') or has_nvenc.get('av1')) and has_filter.get('scale_npp'):
+                video_opts += ['-vf', f'scale_npp=-2:{height}']
+            elif has_filter.get('scale_vaapi'):
+                video_opts += ['-vaapi_device','/dev/dri/renderD128','-vf', f'format=nv12,hwupload,scale_vaapi=w=-2:h={height}']
+            elif has_filter['scale']:
+                video_opts += ['-vf', f'scale=-2:{height}']
+
+        if codec == 'H264':
+            if use_nvenc and has_nvenc['h264']:
+                video_opts += ['-c:v', 'h264_nvenc', '-preset', preset, '-rc', 'constqp', '-qp', cq,
+                               '-spatial_aq', '1', '-temporal_aq', '1', '-aq-strength', '8', '-g', '30', '-bf', '2']
+            elif has_sw['h264']:
+                video_opts += ['-c:v', 'libx264', '-preset', 'medium', '-crf', cq]
+            elif has_nvenc.get('h264_vaapi'):
+                video_opts += ['-vaapi_device','/dev/dri/renderD128','-vf','format=nv12,hwupload', '-c:v','h264_vaapi','-qp', cq]
+            else:
+                self.log("ERRORE: nessun encoder H.264 disponibile.\n"); return None
+            add_scaler(None)  # scaling menu disabilitato per H264
+        elif codec == 'H265':
+            if use_nvenc and has_nvenc['hevc']:
+                video_opts += ['-c:v', 'hevc_nvenc', '-preset', preset, '-rc', 'constqp', '-qp', cq,
+                               '-spatial_aq', '1', '-temporal_aq', '1', '-aq-strength', '8', '-g', '30', '-bf', '2']
+            elif has_sw['hevc']:
+                video_opts += ['-c:v', 'libx265', '-preset', 'medium', '-crf', cq]
+            elif has_nvenc.get('hevc_vaapi'):
+                video_opts += ['-vaapi_device','/dev/dri/renderD128','-vf','format=nv12,hwupload', '-c:v','hevc_vaapi','-qp', cq]
+            else:
+                self.log("ERRORE: nessun encoder HEVC disponibile.\n"); return None
+            add_scaler(None)
+        elif codec == 'AV1':
+            if use_nvenc and has_nvenc['av1']:
+                video_opts += ['-c:v', 'av1_nvenc', '-preset', preset, '-cq', cq,
+                               '-spatial_aq', '1', '-temporal_aq', '1', '-aq-strength', '8', '-g', '30', '-bf', '2']
+            elif has_sw['av1svt']:
+                video_opts += ['-c:v', 'libsvtav1', '-preset', preset.lstrip('p') or '6', '-crf', cq]
+            elif has_sw['av1aom']:
+                video_opts += ['-c:v', 'libaom-av1', '-cpu-used', preset.lstrip('p') or '4', '-crf', cq, '-b:v', '0']
+            elif has_nvenc.get('av1_vaapi'):
+                video_opts += ['-vaapi_device','/dev/dri/renderD128','-vf','format=nv12,hwupload', '-c:v','av1_vaapi','-qp', cq]
+            else:
+                self.log("ERRORE: nessun encoder AV1 disponibile.\n"); return None
+            add_scaler(scale_height)
+        else:
+            self.log("ERRORE: codec sconosciuto.\n"); return None
+
+        return base_cmd + video_opts + audio_opts + container_extra + [output_file]
 
     def update_cq_label(self, value):
         self.cq_label.configure(text=f"{int(value)}")
@@ -528,20 +648,17 @@ class AppWindow(ctk.CTkToplevel):
         self.update_command_preview()
 
     def find_ffmpeg(self):
-        ffmpeg_path = shutil.which("ffmpeg")
+        ffmpeg_path = shutil.which('ffmpeg')
         if ffmpeg_path:
             return ffmpeg_path
         try:
-            # Percorso per l'eseguibile PyInstaller
             base_path = sys._MEIPASS
         except AttributeError:
-            # Percorso per l'esecuzione normale come script .py
             base_path = os.path.dirname(os.path.abspath(__file__))
-        
-        local_path = os.path.join(base_path, 'ffmpeg.exe')
-        if os.path.exists(local_path):
-            return local_path
-            
+        if IS_WIN:
+            local_path = os.path.join(base_path, 'ffmpeg.exe')
+            if os.path.exists(local_path):
+                return local_path
         return None
 
     def log(self, message):
