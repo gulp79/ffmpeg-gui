@@ -72,6 +72,30 @@ Una semplicissima interfaccia grafica per FFmpeg con supporto per codifica AV1, 
 
 2. **Output**:
    - `dist/FFmpeg_GUI.exe` - Eseguibile
+   -
+### Linux con Pyinstaller (Impacchetta l'interprete Python, il tuo codice sorgente in un unico pacchetto eseguibile)
+
+1. **Compila l'eseguibile**:
+   ```batch
+   sudo apt install -y python3-tk tkdnd
+   pip install pyinstaller
+   pyinstaller --name FFmpeg-GUI --onefile --windowed FFmpeg-GUI.py
+   ```
+
+2. **Output**:
+   - `dist/FFmpeg_GUI.bin` - Eseguibile
+   -
+### Linux con Nuitka (Coverte il codice Python in C o C++ che poi viene compilato)
+
+1. **Compila l'eseguibile**:
+   ```batch
+   sudo apt install -y python3-tk tkdnd
+   pip install nuitka ordered-set
+   python -m nuitka --standalone --onefile --enable-plugin=tk-inter FFmpeg-GUI.py
+   ```
+
+2. **Output**:
+   - `FFmpeg_GUI.bin` - Eseguibile
 
 ## 📦 Installazione FFmpeg
 
