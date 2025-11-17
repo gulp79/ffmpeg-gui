@@ -62,7 +62,7 @@ Una semplicissima interfaccia grafica per FFmpeg con supporto per codifica AV1, 
 
 2. **Output**:
    - `FFmpeg_GUI.exe` - Eseguibile
-   - 
+     
 ### Windows con Pyinstaller (Impacchetta l'interprete Python, il tuo codice sorgente in un unico pacchetto eseguibile)
 
 1. **Compila l'eseguibile**:
