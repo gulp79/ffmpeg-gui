@@ -85,7 +85,7 @@ Una semplicissima interfaccia grafica per FFmpeg con supporto per codifica AV1, 
 
 2. **Output**:
    - `dist/FFmpeg_GUI.bin` - Eseguibile
-   -
+   
 ### Linux con Nuitka (Coverte il codice Python in C o C++ che poi viene compilato)
 
 1. **Compila l'eseguibile**:
