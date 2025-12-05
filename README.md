@@ -57,7 +57,7 @@ Una semplicissima interfaccia grafica per FFmpeg con supporto per codifica AV1, 
 1. **Compila l'eseguibile**:
    ```batch
    pip install nuitka ordered-set
-   nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=tk-inter --windows-icon-from-ico=icona.ico FFmpeg-GUI.py
+   nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=tk-inter --mingw64 --windows-icon-from-ico=icona.ico FFmpeg-GUI.py
    ```
 
 2. **Output**:
