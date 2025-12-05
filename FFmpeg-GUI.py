@@ -75,7 +75,7 @@ class AppWindow(ctk.CTkToplevel):
         
         ctk.CTkLabel(self.options_frame, text="Codec:", anchor="w", text_color=COLOR_PALETTE["text"]).grid(row=0, column=0, padx=20, pady=10, sticky="ew")
         self.codec_var = ctk.StringVar(value="AV1")
-        self.codec_menu = ctk.CTkOptionMenu(self.options_frame, values=["AV1", "H265", "H264", "Crea proxy"], variable=self.codec_var, command=self.update_ui_for_codec, fg_color=COLOR_PALETTE["accent_green"], button_color=COLOR_PALETTE["accent_green"], button_hover_color=COLOR_PALETTE["accent_green_hover"], text_color=COLOR_PALETTE["text_dark"])
+        self.codec_menu = ctk.CTkOptionMenu(self.options_frame, values=["AV1", "H265", "H264", "Proxy_AV1", "Proxy_h264"], variable=self.codec_var, command=self.update_ui_for_codec, fg_color=COLOR_PALETTE["accent_green"], button_color=COLOR_PALETTE["accent_green"], button_hover_color=COLOR_PALETTE["accent_green_hover"], text_color=COLOR_PALETTE["text_dark"])
         self.codec_menu.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
 
         ctk.CTkLabel(self.options_frame, text="Preset:", anchor="w", text_color=COLOR_PALETTE["text"]).grid(row=0, column=1, padx=20, pady=10, sticky="ew")
@@ -300,7 +300,7 @@ class AppWindow(ctk.CTkToplevel):
         """Genera il percorso del file di output usando pathlib."""
         codec = self.codec_var.get()
 
-        if codec == "Crea proxy":
+        if codec in ("Proxy_AV1", "Proxy_h264"):
             proxy_dir = input_path.parent / "proxy"
             return proxy_dir / input_path.name
         else:
@@ -449,10 +449,17 @@ class AppWindow(ctk.CTkToplevel):
         codec = self.codec_var.get()
         output_file = str(self.generate_output_path(Path(input_file)))
         
-        if codec == 'Crea proxy':
+        if codec == 'Proxy_AV1':
             return [
                 ffmpeg_path, '-y', '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', 
                 '-i', input_file, '-c:v', 'av1_nvenc', '-vf', 'scale_cuda=-2:576', 
+                '-preset', 'p1', '-cq', '0', '-tune', 'll', '-g', '30', '-c:a', 'copy', output_file
+            ]
+        
+        if codec == 'Proxy_h264':
+            return [
+                ffmpeg_path, '-y', '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', 
+                '-i', input_file, '-c:v', 'h264_nvenc', '-vf', 'scale_cuda=-2:576', 
                 '-preset', 'p1', '-cq', '0', '-tune', 'll', '-g', '30', '-c:a', 'copy', output_file
             ]
 
@@ -489,7 +496,7 @@ class AppWindow(ctk.CTkToplevel):
         self.update_command_preview()
 
     def update_ui_for_codec(self, codec):
-        is_proxy_mode = codec == "Crea proxy"
+        is_proxy_mode = codec in ("Proxy_AV1", "Proxy_h264")
         controls_state = "disabled" if is_proxy_mode else "normal"
         
         self.preset_menu.configure(state=controls_state)
