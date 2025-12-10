@@ -2,6 +2,7 @@ name: Build and Release FFmpeg GUI
 
 # Si attiva quando crei un nuovo tag che inizia con 'v' (es. v1.0, v1.0.1)
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
