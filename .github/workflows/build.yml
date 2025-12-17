@@ -1,0 +1,187 @@
+name: Build FFmpeg GUI
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_nuitka:
+        description: "Build con Nuitka"
+        required: true
+        default: true
+        type: boolean
+      build_pyinstaller:
+        description: "Build con PyInstaller"
+        required: true
+        default: true
+        type: boolean
+      build_windows:
+        description: "Build per Windows"
+        required: true
+        default: true
+        type: boolean
+      build_linux:
+        description: "Build per Linux"
+        required: true
+        default: false
+        type: boolean
+      build_macos:
+        description: "Build per macOS"
+        required: true
+        default: false
+        type: boolean
+      use_upx_compression:
+        description: "Comprimi con UPX"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare-matrix:
+    name: Prepare Build Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Set matrix
+        id: set-matrix
+        run: |
+          OS_LIST="[]"
+          if [ "${{ inputs.build_windows }}" == "true" ]; then OS_LIST=$(echo $OS_LIST | jq -c '. += ["windows-latest"]'); fi
+          if [ "${{ inputs.build_linux }}" == "true" ]; then OS_LIST=$(echo $OS_LIST | jq -c '. += ["ubuntu-latest"]'); fi
+          if [ "${{ inputs.build_macos }}" == "true" ]; then OS_LIST=$(echo $OS_LIST | jq -c '. += ["macos-latest"]'); fi
+          echo "matrix={\"os\":$OS_LIST}" >> $GITHUB_OUTPUT
+
+  build-gui:
+    name: Build on ${{ matrix.os }}
+    needs: prepare-matrix
+    runs-on: ${{ matrix.os }}
+    if: needs.prepare-matrix.outputs.matrix != '{"os":[]}'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install System Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc g++ patchelf upx-ucl libpulse-dev
+        shell: bash
+
+      - name: Install UPX (Windows)
+        if: runner.os == 'Windows' && inputs.use_upx_compression == true
+        run: |
+          curl -L https://github.com/upx/upx/releases/download/v5.0.2/upx-5.0.2-win64.zip -o upx.zip
+          7z x upx.zip
+          move upx-5.0.2-win64\upx.exe C:\Windows\System32\
+        shell: cmd
+
+      - name: Install UPX (macOS)
+        if: runner.os == 'macOS' && inputs.use_upx_compression == true
+        run: brew install upx
+        shell: bash
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install PySide6 Pillow
+          if [ "${{ inputs.build_nuitka }}" == "true" ]; then python -m pip install nuitka; fi
+          if [ "${{ inputs.build_pyinstaller }}" == "true" ]; then python -m pip install pyinstaller; fi
+        shell: bash
+
+      - name: Prepare macOS Icon
+        if: runner.os == 'macOS' && hashFiles('icona.ico') != ''
+        run: |
+          python -c "
+          from PIL import Image
+          import os
+          icon = Image.open('icona.ico')
+          os.makedirs('icona.iconset', exist_ok=True)
+          sizes = [16, 32, 64, 128, 256, 512, 1024]
+          for s in sizes:
+              icon.resize((s, s), Image.Resampling.LANCZOS).save(f'icona.iconset/icon_{s}x{s}.png')
+              if s <= 512:
+                  icon.resize((s*2, s*2), Image.Resampling.LANCZOS).save(f'icona.iconset/icon_{s}x{s}@2x.png')
+          "
+          iconutil -c icns icona.iconset -o icona.icns
+        shell: bash
+
+      - name: Prepare output folders
+        run: mkdir -p dist/pyinstaller dist/nuitka
+        shell: bash
+
+      # -----------------------
+      # PYINSTALLER
+      # -----------------------
+      - name: Build with PyInstaller
+        if: inputs.build_pyinstaller == true
+        run: |
+          OPTS="--clean --onefile --noconfirm --distpath dist/pyinstaller --name FFmpeg-GUI"
+          if [ "${{ runner.os }}" != "Linux" ]; then OPTS="$OPTS --windowed"; fi
+          
+          if [ -f "icona.ico" ] && [ "${{ runner.os }}" == "Windows" ]; then OPTS="$OPTS --icon=icona.ico"; fi
+          if [ -f "icona.icns" ] && [ "${{ runner.os }}" == "macOS" ]; then OPTS="$OPTS --icon=icona.icns"; fi
+          
+          python -m PyInstaller $OPTS FFmpeg-GUI.py
+        shell: bash
+
+      # -----------------------
+      # NUITKA
+      # -----------------------
+      - name: Build with Nuitka
+        if: inputs.build_nuitka == true
+        run: |
+          OPTS="--onefile --assume-yes-for-downloads --output-dir=dist/nuitka --remove-output"
+          # Abilita plugin corretto per PySide6
+          OPTS="$OPTS --enable-plugin=pyside6"
+          
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            OPTS="$OPTS --windows-disable-console --output-filename=FFmpeg-GUI.exe"
+            [ -f "icona.ico" ] && OPTS="$OPTS --windows-icon-from-ico=icona.ico"
+          else
+            OPTS="$OPTS --output-filename=FFmpeg-GUI"
+          fi
+          
+          if [ "${{ runner.os }}" == "macOS" ]; then
+            OPTS="$OPTS --macos-create-app-bundle"
+            [ -f "icona.icns" ] && OPTS="$OPTS --macos-app-icon=icona.icns"
+          fi
+          
+          python -m nuitka $OPTS FFmpeg-GUI.py
+        shell: bash
+
+      # -----------------------
+      # COMPRESS & UPLOAD
+      # -----------------------
+      - name: Compress with UPX
+        if: inputs.use_upx_compression == true
+        run: |
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            find dist -type f -name "*.exe" -exec upx --best --lzma "{}" \;
+          else
+            find dist -type f -executable ! -name "*.so" ! -name "*.dylib" -exec upx --best --lzma "{}" \;
+          fi
+        shell: bash
+        continue-on-error: true
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FFmpeg-GUI-${{ runner.os }}
+          path: dist/**/*
+          retention-days: 7
