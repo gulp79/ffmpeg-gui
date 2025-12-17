@@ -1,48 +1,414 @@
-name: Build and Release FFmpeg GUI
+name: Build GUI
 
-# Si attiva quando crei un nuovo tag che inizia con 'v' (es. v1.0, v1.0.1)
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
+    inputs:
+      build_nuitka:
+        description: "Build con Nuitka"
+        required: true
+        default: true
+        type: boolean
+      build_pyinstaller:
+        description: "Build con PyInstaller"
+        required: true
+        default: true
+        type: boolean
+      build_windows:
+        description: "Build per Windows"
+        required: true
+        default: true
+        type: boolean
+      build_linux:
+        description: "Build per Linux"
+        required: true
+        default: false
+        type: boolean
+      build_macos:
+        description: "Build per macOS"
+        required: true
+        default: false
+        type: boolean
+      use_upx_compression:
+        description: "Comprimi con UPX"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    permissions:
-      contents: write
-    
+  # Job per preparare la matrice dinamicamente
+  prepare-matrix:
+    name: Prepare Build Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-        
-    - name: Build executable
-      run: |
-        pyinstaller --noconsole --onefile --icon="icona.ico" --windowed --name "FFmpeg_GUI" --collect-all customtkinter --collect-all tkinterdnd2 FFmpeg-GUI.py
-        
-    - name: Create build
-      run: |      
-        $TAG_NAME = "${{ github.ref_name }}"
-        Compress-Archive -Path dist\FFmpeg_GUI.exe -DestinationPath "FFmpeg_GUI-windows-${TAG_NAME}.zip"
-        shell: pwsh
+      - name: Set matrix based on inputs
+        id: set-matrix
+        run: |
+          OS_LIST="[]"
+          
+          if [ "${{ inputs.build_windows }}" == "true" ]; then
+            OS_LIST=$(echo $OS_LIST | jq -c '. += ["windows-latest"]')
+          fi
+          
+          if [ "${{ inputs.build_linux }}" == "true" ]; then
+            OS_LIST=$(echo $OS_LIST | jq -c '. += ["ubuntu-latest"]')
+          fi
+          
+          if [ "${{ inputs.build_macos }}" == "true" ]; then
+            OS_LIST=$(echo $OS_LIST | jq -c '. += ["macos-latest"]')
+          fi
+          
+          MATRIX=$(echo "{\"os\":$OS_LIST}" | jq -c .)
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "Selected OS: $OS_LIST"
 
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        # Il corpo della release conterrà automaticamente le note generate
-        generate_release_notes: true
-        # Carica il file ZIP creato nello step precedente
-        files: |
-          FFmpeg_GUI-windows-*.zip
+  # Job CLI separato (più leggero)
+  build-cli:
+    name: Build CLI on ${{ matrix.os }}
+    needs: prepare-matrix
+    runs-on: ${{ matrix.os }}
+    
+    if: |
+      inputs.build_cli == true &&
+      needs.prepare-matrix.outputs.matrix != '{"os":[]}'
+    
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_PYTHON_VERSION_WARNING: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc g++ patchelf upx-ucl
+        shell: bash
+
+      - name: Install UPX (Windows)
+        if: runner.os == 'Windows' && inputs.use_upx_compression == true
+        run: |
+          curl -L https://github.com/upx/upx/releases/download/v5.0.2/upx-5.0.2-win64.zip -o upx.zip
+          7z x upx.zip
+          move upx-5.0.2-win64\upx.exe C:\Windows\System32\
+          upx --version
+        shell: cmd
+
+      - name: Install UPX (macOS)
+        if: runner.os == 'macOS' && inputs.use_upx_compression == true
+        run: |
+          brew install upx
+        shell: bash
+
+      - name: Upgrade pip tooling
+        run: python -m pip install --upgrade pip setuptools wheel
+        shell: bash
+
+      # CLI non necessita di PySide6
+      - name: Install minimal dependencies
+        run: |
+          echo "Installing only core dependencies for CLI..."
+        shell: bash
+
+      - name: Install build tools
+        run: |
+          TOOLS=""
+          if [ "${{ inputs.build_nuitka }}" == "true" ]; then
+            TOOLS="$TOOLS nuitka"
+          fi
+          if [ "${{ inputs.build_pyinstaller }}" == "true" ]; then
+            TOOLS="$TOOLS pyinstaller"
+          fi
+          if [ -n "$TOOLS" ]; then
+            python -m pip install $TOOLS
+          fi
+        shell: bash
+
+      - name: Syntax check
+        run: python -m compileall -q vw_cleaner_cli.py vw_cleaner_core.py
+        shell: bash
+
+      - name: Prepare output folders
+        run: |
+          rm -rf dist build
+          mkdir -p dist/pyinstaller dist/nuitka
+        shell: bash
+
+  # Job GUI separato (con PySide6)
+  build-gui:
+    name: Build GUI on ${{ matrix.os }}
+    needs: prepare-matrix
+    runs-on: ${{ matrix.os }}
+    
+    if: needs.prepare-matrix.outputs.matrix != '{"os":[]}'
+    
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_PYTHON_VERSION_WARNING: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc g++ patchelf upx-ucl
+        shell: bash
+
+      - name: Install UPX (Windows)
+        if: runner.os == 'Windows' && inputs.use_upx_compression == true
+        run: |
+          curl -L https://github.com/upx/upx/releases/download/v5.0.2/upx-5.0.2-win64.zip -o upx.zip
+          7z x upx.zip
+          move upx-5.0.2-win64\upx.exe C:\Windows\System32\
+          upx --version
+        shell: cmd
+
+      - name: Install UPX (macOS)
+        if: runner.os == 'macOS' && inputs.use_upx_compression == true
+        run: |
+          brew install upx
+        shell: bash
+
+      - name: Upgrade pip tooling
+        run: python -m pip install --upgrade pip setuptools wheel
+        shell: bash
+
+      - name: Install GUI requirements
+        run: |
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+          python -m pip install Pillow
+        shell: bash
+
+      - name: Install build tools
+        run: |
+          TOOLS=""
+          if [ "${{ inputs.build_nuitka }}" == "true" ]; then
+            TOOLS="$TOOLS nuitka"
+          fi
+          if [ "${{ inputs.build_pyinstaller }}" == "true" ]; then
+            TOOLS="$TOOLS pyinstaller"
+          fi
+          if [ -n "$TOOLS" ]; then
+            python -m pip install $TOOLS
+          fi
+        shell: bash
+
+      - name: Syntax check
+        run: python -m compileall -q vw_cleaner_gui.py vw_cleaner_core.py
+        shell: bash
+
+      - name: Convert icon (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if [ -f "icona.ico" ]; then
+            mkdir -p icona.iconset
+            sips -z 16 16     icona.ico --out icona.iconset/icon_16x16.png
+            sips -z 32 32     icona.ico --out icona.iconset/icon_16x16@2x.png
+            sips -z 32 32     icona.ico --out icona.iconset/icon_32x32.png
+            sips -z 64 64     icona.ico --out icona.iconset/icon_32x32@2x.png
+            sips -z 128 128   icona.ico --out icona.iconset/icon_128x128.png
+            sips -z 256 256   icona.ico --out icona.iconset/icon_128x128@2x.png
+            sips -z 256 256   icona.ico --out icona.iconset/icon_256x256.png
+            sips -z 512 512   icona.ico --out icona.iconset/icon_256x256@2x.png
+            sips -z 512 512   icona.ico --out icona.iconset/icon_512x512.png
+            sips -z 1024 1024 icona.ico --out icona.iconset/icon_512x512@2x.png
+            iconutil -c icns icona.iconset -o icona.icns
+            rm -rf icona.iconset
+            echo "Icon converted to ICNS"
+          fi
+        shell: bash
+
+      - name: Prepare output folders
+        run: |
+          rm -rf dist build
+          mkdir -p dist/pyinstaller dist/nuitka
+        shell: bash
+
+      # -----------------------
+      # PYINSTALLER GUI
+      # -----------------------
+      - name: PyInstaller - GUI (onefile, optimized)
+        if: ${{ inputs.build_pyinstaller == true }}
+        run: |
+          OPTS="--clean --noconfirm --onefile"
+          OPTS="$OPTS --strip"
+          OPTS="$OPTS --optimize=2"
+          OPTS="$OPTS --distpath=dist/pyinstaller"
+          OPTS="$OPTS --workpath=build/pyinstaller-gui"
+          OPTS="$OPTS --specpath=build"
+          OPTS="$OPTS -n FFmpeg-GUI"
+          
+          # Windows: no console + icon
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            OPTS="$OPTS --noconsole"
+            if [ -f "icona.ico" ]; then
+              OPTS="$OPTS --icon=icona.ico"
+            fi
+          fi
+          
+          # macOS: no console + icon
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            OPTS="$OPTS --noconsole"
+            if [ -f "icona.icns" ]; then
+              OPTS="$OPTS --icon=icona.icns"
+            fi
+          fi
+          
+          # Linux: icon
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            if [ -f "icona.png" ]; then
+              OPTS="$OPTS --icon=icona.png"
+            fi
+          fi
+          
+          # Escludi moduli non necessari
+          OPTS="$OPTS --exclude-module=matplotlib"
+          OPTS="$OPTS --exclude-module=numpy"
+          OPTS="$OPTS --exclude-module=scipy"
+          OPTS="$OPTS --exclude-module=pandas"
+          OPTS="$OPTS --exclude-module=IPython"
+          OPTS="$OPTS --exclude-module=pytest"
+          
+          python -m PyInstaller $OPTS vw_cleaner_gui.py
+        shell: bash
+
+      # -----------------------
+      # NUITKA GUI (con Qt plugin stripping)
+      # -----------------------
+      - name: Nuitka - GUI (onefile, Qt optimized)
+        if: ${{ inputs.build_nuitka == true }}
+        run: |
+          OPTS="--onefile"
+          OPTS="$OPTS --assume-yes-for-downloads"
+          OPTS="$OPTS --output-dir=dist/nuitka"
+          OPTS="$OPTS --remove-output"
+          OPTS="$OPTS --enable-plugin=tk-inter"
+          
+          # Ottimizzazioni aggressive
+          OPTS="$OPTS --lto=yes"
+          # static-libpython solo su Linux (non supportato su Windows/macOS ufficiali)
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            OPTS="$OPTS --static-libpython=yes"
+          fi
+          
+          # Qt plugins - include SOLO quelli necessari
+          OPTS="$OPTS --include-qt-plugins=sensible,styles"
+          OPTS="$OPTS --noinclude-qt-translations"
+          
+          # Escludi moduli non necessari
+          OPTS="$OPTS --nofollow-import-to=matplotlib"
+          OPTS="$OPTS --nofollow-import-to=numpy"
+          OPTS="$OPTS --nofollow-import-to=scipy"
+          OPTS="$OPTS --nofollow-import-to=pandas"
+          OPTS="$OPTS --nofollow-import-to=IPython"
+          OPTS="$OPTS --nofollow-import-to=pytest"
+          OPTS="$OPTS --nofollow-import-to=setuptools"
+          
+          # Windows specifico
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            OPTS="$OPTS --mingw64"
+            OPTS="$OPTS --windows-disable-console"
+            OPTS="$OPTS --output-filename=FFmpeg-GUI.exe"
+            if [ -f "icona.ico" ]; then
+              OPTS="$OPTS --windows-icon-from-ico=icona.ico"
+            fi
+          else
+            OPTS="$OPTS --output-filename=FFmpeg-GUI"
+          fi
+          
+          # macOS specifico
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            if [ -f "icona.icns" ]; then
+              OPTS="$OPTS --macos-app-icon=icona.icns"
+            fi
+            OPTS="$OPTS --macos-create-app-bundle"
+          fi
+          
+          # Linux specifico
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            if [ -f "icona.png" ]; then
+              OPTS="$OPTS --linux-icon=icona.png"
+            fi
+          fi
+          
+          python -m nuitka $OPTS FFmpeg-GUI.py
+        shell: bash
+
+      # -----------------------
+      # UPX COMPRESSION
+      # -----------------------
+      - name: Compress binaries with UPX
+        if: ${{ inputs.use_upx_compression == true }}
+        run: |
+          echo "=== Compressing binaries with UPX ==="
+          
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            find dist -type f -name "*.exe" -exec sh -c 'echo "Compressing: {}"; upx --best --lzma "{}" || echo "Failed: {}"' \;
+          else
+            find dist -type f -executable ! -name "*.so" ! -name "*.dylib" -exec sh -c 'echo "Compressing: {}"; upx --best --lzma "{}" || echo "Failed: {}"' \;
+          fi
+          
+          echo "=== UPX Compression Complete ==="
+        shell: bash
+        continue-on-error: true
+
+      - name: Show build info
+        run: |
+          echo "=== GUI BUILD INFORMATION ==="
+          echo "OS: ${{ runner.os }}"
+          echo "Nuitka: ${{ inputs.build_nuitka }}"
+          echo "PyInstaller: ${{ inputs.build_pyinstaller }}"
+          echo "UPX: ${{ inputs.use_upx_compression }}"
+          echo ""
+          echo "=== FILE SIZES ==="
+          find dist -type f -exec ls -lh {} \;
+        shell: bash
+
+      - name: Upload GUI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FFmpeg-GUI-${{ runner.os }}
+          path: dist/**/*
+          if-no-files-found: error
+          retention-days: 30
