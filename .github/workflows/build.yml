@@ -37,10 +37,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   prepare-matrix:
     name: Prepare Build Matrix
@@ -80,7 +76,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc g++ patchelf upx-ucl libpulse-dev
+          sudo apt-get install -y gcc g++ patchelf upx-ucl libpulse-dev python3-tk
         shell: bash
 
       - name: Install UPX (Windows)
@@ -99,7 +95,10 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install PySide6 Pillow
+          # Installiamo tutte le dipendenze dal file requirements.txt
+          if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+          # Assicuriamoci che customtkinter e Pillow siano presenti
+          python -m pip install customtkinter Pillow tkinterdnd2
           if [ "${{ inputs.build_nuitka }}" == "true" ]; then python -m pip install nuitka; fi
           if [ "${{ inputs.build_pyinstaller }}" == "true" ]; then python -m pip install pyinstaller; fi
         shell: bash
@@ -131,9 +130,12 @@ jobs:
       - name: Build with PyInstaller
         if: inputs.build_pyinstaller == true
         run: |
+          # --collect-all è fondamentale per customtkinter e tkinterdnd2
           OPTS="--clean --onefile --noconfirm --distpath dist/pyinstaller --name FFmpeg-GUI"
-          if [ "${{ runner.os }}" != "Linux" ]; then OPTS="$OPTS --windowed"; fi
+          OPTS="$OPTS --collect-all customtkinter"
+          OPTS="$OPTS --collect-all tkinterdnd2"
           
+          if [ "${{ runner.os }}" != "Linux" ]; then OPTS="$OPTS --windowed"; fi
           if [ -f "icona.ico" ] && [ "${{ runner.os }}" == "Windows" ]; then OPTS="$OPTS --icon=icona.ico"; fi
           if [ -f "icona.icns" ] && [ "${{ runner.os }}" == "macOS" ]; then OPTS="$OPTS --icon=icona.icns"; fi
           
@@ -147,8 +149,10 @@ jobs:
         if: inputs.build_nuitka == true
         run: |
           OPTS="--onefile --assume-yes-for-downloads --output-dir=dist/nuitka --remove-output"
-          # Abilita plugin corretto per PySide6
-          OPTS="$OPTS --enable-plugin=pyside6"
+          # Per CustomTkinter e TkinterDnD serve il plugin tk-inter
+          OPTS="$OPTS --enable-plugin=tk-inter"
+          OPTS="$OPTS --include-package=customtkinter"
+          OPTS="$OPTS --include-package=tkinterdnd2"
           
           if [ "${{ runner.os }}" == "Windows" ]; then
             OPTS="$OPTS --windows-disable-console --output-filename=FFmpeg-GUI.exe"
