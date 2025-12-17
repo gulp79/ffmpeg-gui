@@ -3,6 +3,11 @@ name: Build GUI
 on:
   workflow_dispatch:
     inputs:
+      build_cli:
+        description: "Build versione CLI"
+        required: true
+        default: true
+        type: boolean
       build_nuitka:
         description: "Build con Nuitka"
         required: true
@@ -70,7 +75,7 @@ jobs:
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
           echo "Selected OS: $OS_LIST"
 
-  # Job CLI separato (più leggero)
+  # Job CLI
   build-cli:
     name: Build CLI on ${{ matrix.os }}
     needs: prepare-matrix
@@ -127,12 +132,6 @@ jobs:
         run: python -m pip install --upgrade pip setuptools wheel
         shell: bash
 
-      # CLI non necessita di PySide6
-      - name: Install minimal dependencies
-        run: |
-          echo "Installing only core dependencies for CLI..."
-        shell: bash
-
       - name: Install build tools
         run: |
           TOOLS=""
@@ -157,7 +156,7 @@ jobs:
           mkdir -p dist/pyinstaller dist/nuitka
         shell: bash
 
-  # Job GUI separato (con PySide6)
+  # Job GUI
   build-gui:
     name: Build GUI on ${{ matrix.os }}
     needs: prepare-matrix
@@ -276,10 +275,9 @@ jobs:
           OPTS="$OPTS --optimize=2"
           OPTS="$OPTS --distpath=dist/pyinstaller"
           OPTS="$OPTS --workpath=build/pyinstaller-gui"
-          OPTS="$OPTS --specpath=build"
+          # Rimosso --specpath per evitare problemi con i percorsi delle icone
           OPTS="$OPTS -n FFmpeg-GUI"
           
-          # Windows: no console + icon
           if [ "${{ runner.os }}" = "Windows" ]; then
             OPTS="$OPTS --noconsole"
             if [ -f "icona.ico" ]; then
@@ -287,7 +285,6 @@ jobs:
             fi
           fi
           
-          # macOS: no console + icon
           if [ "${{ runner.os }}" = "macOS" ]; then
             OPTS="$OPTS --noconsole"
             if [ -f "icona.icns" ]; then
@@ -295,61 +292,34 @@ jobs:
             fi
           fi
           
-          # Linux: icon
           if [ "${{ runner.os }}" = "Linux" ]; then
             if [ -f "icona.png" ]; then
               OPTS="$OPTS --icon=icona.png"
             fi
           fi
           
-          # Escludi moduli non necessari
-          OPTS="$OPTS --exclude-module=matplotlib"
-          OPTS="$OPTS --exclude-module=numpy"
-          OPTS="$OPTS --exclude-module=scipy"
-          OPTS="$OPTS --exclude-module=pandas"
-          OPTS="$OPTS --exclude-module=IPython"
-          OPTS="$OPTS --exclude-module=pytest"
+          OPTS="$OPTS --exclude-module=matplotlib --exclude-module=numpy --exclude-module=scipy"
           
           python -m PyInstaller $OPTS FFmpeg-GUI.py
         shell: bash
 
       # -----------------------
-      # NUITKA GUI (con Qt plugin stripping)
+      # NUITKA GUI
       # -----------------------
       - name: Nuitka - GUI (onefile, Qt optimized)
         if: ${{ inputs.build_nuitka == true }}
         run: |
-          OPTS="--onefile"
-          OPTS="$OPTS --assume-yes-for-downloads"
-          OPTS="$OPTS --output-dir=dist/nuitka"
-          OPTS="$OPTS --remove-output"
-          OPTS="$OPTS --enable-plugin=tk-inter"
-          
-          # Ottimizzazioni aggressive
+          OPTS="--onefile --assume-yes-for-downloads --output-dir=dist/nuitka --remove-output"
           OPTS="$OPTS --lto=yes"
-          # static-libpython solo su Linux (non supportato su Windows/macOS ufficiali)
+          
           if [ "${{ runner.os }}" = "Linux" ]; then
             OPTS="$OPTS --static-libpython=yes"
           fi
           
-          # Qt plugins - include SOLO quelli necessari
-          OPTS="$OPTS --include-qt-plugins=sensible,styles"
-          OPTS="$OPTS --noinclude-qt-translations"
+          OPTS="$OPTS --include-qt-plugins=sensible,styles --noinclude-qt-translations"
           
-          # Escludi moduli non necessari
-          OPTS="$OPTS --nofollow-import-to=matplotlib"
-          OPTS="$OPTS --nofollow-import-to=numpy"
-          OPTS="$OPTS --nofollow-import-to=scipy"
-          OPTS="$OPTS --nofollow-import-to=pandas"
-          OPTS="$OPTS --nofollow-import-to=IPython"
-          OPTS="$OPTS --nofollow-import-to=pytest"
-          OPTS="$OPTS --nofollow-import-to=setuptools"
-          
-          # Windows specifico
           if [ "${{ runner.os }}" = "Windows" ]; then
-            OPTS="$OPTS --mingw64"
-            OPTS="$OPTS --windows-disable-console"
-            OPTS="$OPTS --output-filename=FFmpeg-GUI.exe"
+            OPTS="$OPTS --mingw64 --windows-disable-console --output-filename=FFmpeg-GUI.exe"
             if [ -f "icona.ico" ]; then
               OPTS="$OPTS --windows-icon-from-ico=icona.ico"
             fi
@@ -357,19 +327,11 @@ jobs:
             OPTS="$OPTS --output-filename=FFmpeg-GUI"
           fi
           
-          # macOS specifico
           if [ "${{ runner.os }}" = "macOS" ]; then
             if [ -f "icona.icns" ]; then
               OPTS="$OPTS --macos-app-icon=icona.icns"
             fi
             OPTS="$OPTS --macos-create-app-bundle"
-          fi
-          
-          # Linux specifico
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            if [ -f "icona.png" ]; then
-              OPTS="$OPTS --linux-icon=icona.png"
-            fi
           fi
           
           python -m nuitka $OPTS FFmpeg-GUI.py
@@ -381,29 +343,13 @@ jobs:
       - name: Compress binaries with UPX
         if: ${{ inputs.use_upx_compression == true }}
         run: |
-          echo "=== Compressing binaries with UPX ==="
-          
           if [ "${{ runner.os }}" = "Windows" ]; then
-            find dist -type f -name "*.exe" -exec sh -c 'echo "Compressing: {}"; upx --best --lzma "{}" || echo "Failed: {}"' \;
+            find dist -type f -name "*.exe" -exec sh -c 'upx --best --lzma "{}"' \;
           else
-            find dist -type f -executable ! -name "*.so" ! -name "*.dylib" -exec sh -c 'echo "Compressing: {}"; upx --best --lzma "{}" || echo "Failed: {}"' \;
+            find dist -type f -executable ! -name "*.so" ! -name "*.dylib" -exec sh -c 'upx --best --lzma "{}"' \;
           fi
-          
-          echo "=== UPX Compression Complete ==="
         shell: bash
         continue-on-error: true
-
-      - name: Show build info
-        run: |
-          echo "=== GUI BUILD INFORMATION ==="
-          echo "OS: ${{ runner.os }}"
-          echo "Nuitka: ${{ inputs.build_nuitka }}"
-          echo "PyInstaller: ${{ inputs.build_pyinstaller }}"
-          echo "UPX: ${{ inputs.use_upx_compression }}"
-          echo ""
-          echo "=== FILE SIZES ==="
-          find dist -type f -exec ls -lh {} \;
-        shell: bash
 
       - name: Upload GUI artifacts
         uses: actions/upload-artifact@v4
