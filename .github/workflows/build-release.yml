@@ -148,7 +148,7 @@ jobs:
         shell: bash
 
       - name: Syntax check
-        run: python -m compileall -q vw_cleaner_cli.py vw_cleaner_core.py
+        run: python -m compileall -q FFmpeg-GUI.py
         shell: bash
 
       - name: Prepare output folders
@@ -235,7 +235,7 @@ jobs:
         shell: bash
 
       - name: Syntax check
-        run: python -m compileall -q vw_cleaner_gui.py vw_cleaner_core.py
+        run: python -m compileall -q FFmpeg-GUI.py
         shell: bash
 
       - name: Convert icon (macOS)
@@ -310,7 +310,7 @@ jobs:
           OPTS="$OPTS --exclude-module=IPython"
           OPTS="$OPTS --exclude-module=pytest"
           
-          python -m PyInstaller $OPTS vw_cleaner_gui.py
+          python -m PyInstaller $OPTS FFmpeg-GUI.py
         shell: bash
 
       # -----------------------
