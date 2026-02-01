@@ -1,19 +1,15 @@
 version: 2
 updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "automerge"
+
   # Python (pip / pip-tools)
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
-    # Se usi requirements.txt generati da pip-compile:
-    # registri-supplementari o constraints si possono gestire via manifest.
-
-  # GitHub Actions (workflow in .github/workflows)
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-
-    labels:
-      - "dependencies"
-      - "automerge"
