@@ -1,5 +1,5 @@
 # 🎬 FFmpeg GUI - Video Encoder
-![Downloads](https://img.shields.io/github/downloads/gulp79/ffmpeg-gui/total?style=for-the-badge&labelColor=21262d&color=238636)
+![Downloads](https://img.shields.io/github/downloads/gulp79/ffmpeg-gui/total)
 
 Una semplicissima interfaccia grafica per FFmpeg con supporto per codifica AV1, H265 e H264 con accelerazione hardware CUDA.
 
