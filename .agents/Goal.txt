@@ -1,0 +1,300 @@
+Obiettivo: espandere l’applicazione Python “FFmpeg GUI - Video Encoder” trasformandola da frontend con preset hardcoded a frontend configurabile tramite file esterni, aggiungendo anche la generazione di animazioni WebP, AVIF e GIF.
+
+Contesto del progetto:
+- L’app è una GUI Python per FFmpeg, attualmente usata per codificare video tramite preset frequenti.
+- L’app supporta già codec AV1, H265/HEVC e H264, preset NVENC, CQ, scaling, audio copy, preview comando FFmpeg, log realtime e input multipli/drag & drop.
+- Il progetto viene compilato anche con Nuitka, quindi le nuove funzionalità devono ridurre la necessità di modificare codice e ricompilare per aggiungere preset.
+- Mantenere compatibilità Windows come priorità, ma non rompere Linux/macOS quando possibile.
+- Non rimuovere funzionalità esistenti.
+
+Feature richieste:
+
+1. Preset caricati da file di configurazione esterno
+   - Spostare i preset di encoding attualmente hardcoded in un file di configurazione esterno.
+   - Il file deve essere facilmente modificabile dall’utente senza ricompilare l’applicazione.
+   - Preferire JSON oppure YAML. Se YAML richiede una nuova dipendenza, preferire JSON per ridurre dipendenze.
+   - Il file consigliato è `presets.json`.
+   - L’app deve cercare `presets.json` nella stessa cartella dell’eseguibile o dello script.
+   - Se il file non esiste, l’app deve crearne uno di default con i preset correnti.
+   - Se il file esiste ma è invalido, l’app deve mostrare un errore chiaro e usare una configurazione di fallback sicura.
+   - La GUI deve popolare automaticamente la lista dei preset leggendo il file.
+   - Aggiungendo un nuovo preset nel file, ad esempio “Comprimi Xvid”, questo deve apparire nella GUI al successivo avvio senza modificare il codice.
+   - I preset devono supportare almeno:
+     - nome visualizzato
+     - descrizione
+     - tipo/output container
+     - estensione output
+     - codec video
+     - parametri ffmpeg video
+     - parametri audio
+     - parametri scaling opzionali
+     - parametri qualità esposti in GUI, se applicabile
+     - suffisso nome file output
+     - eventuali opzioni avanzate
+
+2. Architettura modulare
+   - Separare la logica di:
+     - caricamento preset
+     - validazione preset
+     - costruzione comando FFmpeg
+     - gestione GUI
+     - esecuzione processo FFmpeg
+   - Se il codice è attualmente monolitico, fare un refactor leggero e sicuro.
+   - Non fare un rewrite totale se non necessario.
+   - Mantenere nomi chiari, funzioni piccole e testabili.
+   - Evitare duplicazione nella costruzione dei comandi FFmpeg.
+
+3. Nuovi preset/azioni per animazioni WebP, AVIF e GIF
+   - Aggiungere alla GUI una sezione o categoria dedicata a “Animazioni”.
+   - Supportare tre formati:
+     - WebP animato `.webp`
+     - AVIF animato `.avif`
+     - GIF animata `.gif`
+   - Prendere ispirazione dal file batch X2D.bat, ma NON implementare la maschera e NON usare `maskedmerge`.
+   - Il filtro deve essere semplice:
+     - fps configurabile
+     - scaling a larghezza massima configurabile con altezza proporzionale
+     - flags lanczos
+   - La GUI deve permettere almeno:
+     - scelta formato animazione: WebP, AVIF, GIF
+     - FPS, default 7
+     - larghezza target, default 1920, con opzioni 1920, 1280, 720 oppure valore custom se semplice da implementare
+     - qualità WebP, default 70
+     - metodo/compression level WebP, default 6
+     - CRF AVIF, default 32
+     - preset AVIF, default 6
+     - encoder AVIF selezionabile tra `libsvtav1` e `libaom-av1`, default `libsvtav1`
+     - colori GIF, default 64
+     - dither GIF, default `bayer:bayer_scale=3`
+     - ottimizzazione GIF con gifsicle opzionale se disponibile
+   - I comandi generati devono essere equivalenti logicamente a questi, ma senza maschera:
+
+     WebP:
+     ffmpeg -y -hide_banner -i INPUT -vf "fps=FPS,scale=TARGET_WIDTH:-2:flags=lanczos" -c:v libwebp -loop 0 -q:v WEBP_QUALITY -compression_level WEBP_METHOD OUTPUT.webp
+
+     AVIF con libsvtav1:
+     ffmpeg -y -hide_banner -i INPUT -vf "fps=FPS,scale=TARGET_WIDTH:-2:flags=lanczos" -c:v libsvtav1 -crf AVIF_CRF -preset AVIF_PRESET -pix_fmt yuv420p OUTPUT.avif
+
+     AVIF con libaom-av1:
+     ffmpeg -y -hide_banner -i INPUT -vf "fps=FPS,scale=TARGET_WIDTH:-2:flags=lanczos" -c:v libaom-av1 -crf AVIF_CRF -b:v 0 -cpu-used 4 -pix_fmt yuv420p OUTPUT.avif
+
+     GIF:
+     Passaggio 1: generare palette temporanea con palettegen.
+     Passaggio 2: creare GIF usando paletteuse.
+     Passaggio 3 opzionale: se gifsicle è disponibile, ottimizzare con `gifsicle -O3 --lossy=GIF_LOSSY --colors GIF_COLORS`.
+   - I file temporanei della GIF devono essere ripuliti anche in caso di errore, quando possibile.
+   - Se gifsicle non è disponibile, la GIF deve comunque essere prodotta senza ottimizzazione esterna.
+   - L’output automatico deve usare suffissi chiari, ad esempio:
+     - `_anim.webp`
+     - `_anim.avif`
+     - `_anim.gif`
+
+4. Supporto batch/multipli file
+   - Le nuove animazioni devono funzionare anche con più file selezionati o trascinati nella GUI.
+   - Per ogni input deve essere prodotto un output separato.
+   - Evitare collisioni di nomi output.
+   - Se esiste già un output, mantenere il comportamento esistente dell’app oppure aggiungere suffisso incrementale, ma documentare la scelta.
+
+5. Preview comando
+   - La preview comando FFmpeg deve continuare a funzionare.
+   - Per GIF, mostrare chiaramente che si tratta di una pipeline a più passaggi.
+   - La preview deve essere leggibile e utile per debug/copia manuale.
+
+6. Validazione e UX
+   - Validare valori numerici:
+     - FPS > 0
+     - larghezza target > 0
+     - qualità WebP in range ragionevole
+     - CRF AVIF in range ragionevole
+     - colori GIF tra 2 e 256
+   - Messaggi di errore in italiano.
+   - Non bloccare la GUI durante la conversione.
+   - Mantenere log real-time.
+   - Mostrare chiaramente se FFmpeg non è trovato.
+   - Mostrare un warning se l’utente seleziona AVIF ma l’encoder scelto non è disponibile nella build FFmpeg.
+   - Mostrare un warning non bloccante se gifsicle non è disponibile.
+
+7. Test
+   - Aggiungere test unitari con pytest per:
+     - caricamento di `presets.json`
+     - creazione automatica del file default
+     - validazione preset valido/invalido
+     - costruzione comando encoding video
+     - costruzione comando WebP
+     - costruzione comando AVIF con libsvtav1
+     - costruzione comando AVIF con libaom-av1
+     - costruzione pipeline GIF
+     - generazione nomi output
+   - I test non devono richiedere realmente FFmpeg installato se possibile.
+   - Testare la costruzione dei comandi come liste di argomenti, non come stringhe shell, per evitare problemi di quoting.
+   - Fare una code review strutturale della GUI se i test grafici non sono pratici.
+
+8. Documentazione
+   - Aggiornare README.md aggiungendo:
+     - spiegazione di `presets.json`
+     - esempio di preset H264/H265/AV1
+     - esempio di preset Xvid
+     - spiegazione della sezione Animazioni WebP/AVIF/GIF
+     - requisiti opzionali: gifsicle per ottimizzazione GIF
+     - note su encoder AVIF disponibili in FFmpeg
+   - Aggiungere eventualmente un file `presets.example.json`.
+
+9. Compatibilità con Nuitka
+   - Garantire che l’app compilata con Nuitka legga `presets.json` esterno dalla cartella dell’eseguibile.
+   - Non incorporare il file configurazione in modo tale da impedire modifiche post-compilazione.
+   - Se necessario, implementare una funzione robusta per determinare la cartella app:
+     - quando eseguita come script Python
+     - quando eseguita come eseguibile compilato
+
+10. Criteri di completamento
+   - L’app si avvia con preset caricati da file esterno.
+   - Se aggiungo manualmente un preset Xvid in `presets.json`, al riavvio compare nella GUI.
+   - I preset esistenti AV1/H265/H264 continuano a funzionare.
+   - Posso selezionare uno o più video e generare WebP animato, AVIF animato o GIF animata senza maschera.
+   - I comandi generati sono visualizzati in preview.
+   - I test passano.
+   - README aggiornato.
+   - Non ci sono regressioni evidenti sulla GUI esistente.
+
+Procedura di lavoro richiesta:
+- Prima analizza il repository e individua file principali, struttura GUI, funzioni che costruiscono i comandi FFmpeg e punti dove i preset sono hardcoded.
+- Crea un Implementation Plan dettagliato.
+- Procedi per step piccoli e verificabili.
+- Dopo ogni modifica importante, esegui test o controlli statici.
+- Non fare refactor invasivi non necessari.
+- Se trovi ambiguità, scegli una soluzione conservativa e documentala.
+
+Esecuzione controllata con checkpoint manuali:
+
+Devi lavorare a fasi e non devi completare tutto in un unico turno.
+
+Le fasi sono:
+
+FASE 1 - Manager / Analisi e piano
+- Analizza repository, struttura codice, preset hardcoded, GUI e costruzione comandi.
+- Non modificare codice.
+- Produci Implementation Plan dettagliato, rischi, file da modificare e ordine dei task.
+- Alla fine fermati.
+
+FASE 2 - Developer / Implementazione core
+- Implementa caricamento preset esterni, validazione config, command builder e integrazione GUI.
+- Mantieni compatibilità con funzionalità esistenti.
+- Alla fine fermati.
+
+FASE 3 - Developer / Animazioni
+- Implementa WebP animato, AVIF animato e GIF animata senza maschera.
+- Integra preview comando, gestione batch e log.
+- Alla fine fermati.
+
+FASE 4 - Tester / Test automatici
+- Scrivi ed esegui test pytest per preset loader, validazione, command builder, animazioni e nomi output.
+- Non modificare codice applicativo salvo autorizzazione.
+- Se i test falliscono, riporta traceback e proposta di fix.
+- Alla fine fermati.
+
+FASE 5 - Developer / Fix
+- Correggi solo i problemi rilevati dai test.
+- Esegui nuovamente i test.
+- Alla fine fermati.
+
+FASE 6 - Documentazione e review finale
+- Aggiorna README, aggiungi presets.example.json se utile, e fai code review finale.
+- Alla fine produci riepilogo finale.
+
+Regola fondamentale:
+Alla fine di ogni fase devi fermarti e non procedere alla fase successiva senza un nuovo messaggio esplicito dell’utente.
+
+Quando ti fermi, termina sempre con questa frase:
+"Mi fermo qui. Cambia eventualmente modello in Antigravity e poi scrivi CONTINUA per avviare la prossima fase."
+
+Lo schema json per il file di configurazione potrebbe essere:
+{
+  "schema_version": 1,
+  "video_presets": [
+    {
+      "id": "h265_nvenc",
+      "name": "H265 NVENC",
+      "description": "Encoding H265/HEVC con accelerazione NVIDIA NVENC",
+      "category": "video",
+      "output_extension": ".mp4",
+      "output_suffix": "_h265_cq{cq}",
+      "ffmpeg": {
+        "hwaccel": ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"],
+        "video_codec": ["-c:v", "hevc_nvenc"],
+        "rate_control": ["-rc:v", "vbr_hq"],
+        "quality_template": ["-cq:v", "{cq}"],
+        "preset_template": ["-preset", "{preset}"],
+        "extra_video_args": [
+          "-rc-lookahead", "32",
+          "-spatial-aq", "1",
+          "-temporal-aq", "1",
+          "-g", "30",
+          "-bf", "2"
+        ],
+        "container_args": ["-movflags", "+faststart"],
+        "audio_args": ["-c:a", "copy"]
+      },
+      "ui": {
+        "cq": {
+          "enabled": true,
+          "default": 23,
+          "min": 0,
+          "max": 51
+        },
+        "preset": {
+          "enabled": true,
+          "default": "p6",
+          "options": ["p1", "p2", "p3", "p4", "p5", "p6", "p7"]
+        },
+        "scale": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "id": "xvid_avi",
+      "name": "Comprimi Xvid",
+      "description": "Compressione software Xvid in container AVI",
+      "category": "video",
+      "output_extension": ".avi",
+      "output_suffix": "_xvid",
+      "ffmpeg": {
+        "hwaccel": [],
+        "video_codec": ["-c:v", "libxvid"],
+        "rate_control": [],
+        "quality_template": ["-q:v", "{quality}"],
+        "preset_template": [],
+        "extra_video_args": [],
+        "container_args": [],
+        "audio_args": ["-c:a", "libmp3lame", "-q:a", "4"]
+      },
+      "ui": {
+        "quality": {
+          "enabled": true,
+          "default": 4,
+          "min": 1,
+          "max": 31,
+          "label": "Qualità Xvid q:v"
+        },
+        "scale": {
+          "enabled": true
+        }
+      }
+    }
+  ],
+  "animation_presets": {
+    "defaults": {
+      "fps": 7,
+      "target_width": 1920,
+      "width_options": [1920, 1280, 720],
+      "webp_quality": 70,
+      "webp_method": 6,
+      "avif_crf": 32,
+      "avif_preset": 6,
+      "avif_encoder": "libsvtav1",
+      "gif_colors": 64,
+      "gif_lossy": 100,
+      "gif_dither": "bayer:bayer_scale=3"
+    }
+  }
+}

@@ -1,0 +1,370 @@
+{
+    "schema_version": 1,
+    "video_presets": [
+        {
+            "id": "av1_nvenc",
+            "name": "AV1 NVENC",
+            "description": "Encoding AV1 con accelerazione NVIDIA NVENC",
+            "category": "video",
+            "output_extension": null,
+            "output_suffix": "_AV1_CQ{cq}",
+            "ffmpeg": {
+                "hwaccel": [
+                    "-hwaccel",
+                    "cuda",
+                    "-hwaccel_output_format",
+                    "cuda"
+                ],
+                "video_codec": [
+                    "-c:v",
+                    "av1_nvenc"
+                ],
+                "rate_control": [
+                    "-rc",
+                    "vbr"
+                ],
+                "quality_template": [
+                    "-cq",
+                    "{cq}"
+                ],
+                "preset_template": [
+                    "-preset",
+                    "{preset}"
+                ],
+                "extra_video_args": [
+                    "-b:v",
+                    "0",
+                    "-tune",
+                    "hq",
+                    "-rc-lookahead",
+                    "64",
+                    "-spatial-aq",
+                    "1",
+                    "-temporal-aq",
+                    "1",
+                    "-g",
+                    "120",
+                    "-bf",
+                    "2"
+                ],
+                "container_args": [
+                    "-movflags",
+                    "+faststart"
+                ],
+                "audio_args": [
+                    "-c:a",
+                    "copy"
+                ]
+            },
+            "ui": {
+                "cq": {
+                    "enabled": true,
+                    "default": 0,
+                    "min": 0,
+                    "max": 51
+                },
+                "preset": {
+                    "enabled": true,
+                    "default": "p6",
+                    "options": [
+                        "p1",
+                        "p2",
+                        "p3",
+                        "p4",
+                        "p5",
+                        "p6",
+                        "p7"
+                    ]
+                },
+                "scale": {
+                    "enabled": true
+                }
+            }
+        },
+        {
+            "id": "hevc_nvenc",
+            "name": "H265 NVENC",
+            "description": "Encoding H265/HEVC con accelerazione NVIDIA NVENC",
+            "category": "video",
+            "output_extension": null,
+            "output_suffix": "_H265_CQ{cq}",
+            "ffmpeg": {
+                "hwaccel": [
+                    "-hwaccel",
+                    "cuda",
+                    "-hwaccel_output_format",
+                    "cuda"
+                ],
+                "video_codec": [
+                    "-c:v",
+                    "hevc_nvenc"
+                ],
+                "rate_control": [
+                    "-rc",
+                    "vbr_hq"
+                ],
+                "quality_template": [
+                    "-cq",
+                    "{cq}"
+                ],
+                "preset_template": [
+                    "-preset",
+                    "{preset}"
+                ],
+                "extra_video_args": [
+                    "-b:v",
+                    "0",
+                    "-tune",
+                    "hq",
+                    "-rc-lookahead",
+                    "64",
+                    "-spatial-aq",
+                    "1",
+                    "-temporal-aq",
+                    "1",
+                    "-g",
+                    "120",
+                    "-bf",
+                    "2"
+                ],
+                "container_args": [
+                    "-movflags",
+                    "+faststart"
+                ],
+                "audio_args": [
+                    "-c:a",
+                    "copy"
+                ]
+            },
+            "ui": {
+                "cq": {
+                    "enabled": true,
+                    "default": 0,
+                    "min": 0,
+                    "max": 51
+                },
+                "preset": {
+                    "enabled": true,
+                    "default": "p6",
+                    "options": [
+                        "p1",
+                        "p2",
+                        "p3",
+                        "p4",
+                        "p5",
+                        "p6",
+                        "p7"
+                    ]
+                },
+                "scale": {
+                    "enabled": false
+                }
+            }
+        },
+        {
+            "id": "h264_nvenc",
+            "name": "H264 NVENC",
+            "description": "Encoding H264 con accelerazione NVIDIA NVENC",
+            "category": "video",
+            "output_extension": null,
+            "output_suffix": "_H264_CQ{cq}",
+            "ffmpeg": {
+                "hwaccel": [
+                    "-hwaccel",
+                    "cuda",
+                    "-hwaccel_output_format",
+                    "cuda"
+                ],
+                "video_codec": [
+                    "-c:v",
+                    "h264_nvenc"
+                ],
+                "rate_control": [
+                    "-rc",
+                    "vbr_hq"
+                ],
+                "quality_template": [
+                    "-cq",
+                    "{cq}"
+                ],
+                "preset_template": [
+                    "-preset",
+                    "{preset}"
+                ],
+                "extra_video_args": [
+                    "-b:v",
+                    "0",
+                    "-tune",
+                    "hq",
+                    "-rc-lookahead",
+                    "64",
+                    "-spatial-aq",
+                    "1",
+                    "-temporal-aq",
+                    "1",
+                    "-g",
+                    "120",
+                    "-bf",
+                    "2"
+                ],
+                "container_args": [
+                    "-movflags",
+                    "+faststart"
+                ],
+                "audio_args": [
+                    "-c:a",
+                    "copy"
+                ]
+            },
+            "ui": {
+                "cq": {
+                    "enabled": true,
+                    "default": 0,
+                    "min": 0,
+                    "max": 51
+                },
+                "preset": {
+                    "enabled": true,
+                    "default": "p6",
+                    "options": [
+                        "p1",
+                        "p2",
+                        "p3",
+                        "p4",
+                        "p5",
+                        "p6",
+                        "p7"
+                    ]
+                },
+                "scale": {
+                    "enabled": false
+                }
+            }
+        },
+        {
+            "id": "proxy_av1",
+            "name": "Proxy AV1",
+            "description": "Crea proxy AV1 a bassa risoluzione (576p)",
+            "category": "video",
+            "output_extension": null,
+            "output_suffix": "",
+            "ffmpeg": {
+                "hwaccel": [
+                    "-hwaccel",
+                    "cuda",
+                    "-hwaccel_output_format",
+                    "cuda"
+                ],
+                "video_codec": [
+                    "-c:v",
+                    "av1_nvenc"
+                ],
+                "rate_control": [],
+                "quality_template": [
+                    "-cq",
+                    "0"
+                ],
+                "preset_template": [
+                    "-preset",
+                    "p1"
+                ],
+                "extra_video_args": [
+                    "-vf",
+                    "scale_cuda=-2:576",
+                    "-tune",
+                    "ll",
+                    "-g",
+                    "30"
+                ],
+                "container_args": [],
+                "audio_args": [
+                    "-c:a",
+                    "copy"
+                ]
+            },
+            "ui": {
+                "cq": {
+                    "enabled": false
+                },
+                "preset": {
+                    "enabled": false
+                },
+                "scale": {
+                    "enabled": false
+                }
+            }
+        },
+        {
+            "id": "proxy_h264",
+            "name": "Proxy H264",
+            "description": "Crea proxy H264 a bassa risoluzione (576p)",
+            "category": "video",
+            "output_extension": null,
+            "output_suffix": "",
+            "ffmpeg": {
+                "hwaccel": [
+                    "-hwaccel",
+                    "cuda",
+                    "-hwaccel_output_format",
+                    "cuda"
+                ],
+                "video_codec": [
+                    "-c:v",
+                    "h264_nvenc"
+                ],
+                "rate_control": [],
+                "quality_template": [
+                    "-cq",
+                    "0"
+                ],
+                "preset_template": [
+                    "-preset",
+                    "p1"
+                ],
+                "extra_video_args": [
+                    "-vf",
+                    "scale_cuda=-2:576",
+                    "-tune",
+                    "ll",
+                    "-g",
+                    "30"
+                ],
+                "container_args": [],
+                "audio_args": [
+                    "-c:a",
+                    "copy"
+                ]
+            },
+            "ui": {
+                "cq": {
+                    "enabled": false
+                },
+                "preset": {
+                    "enabled": false
+                },
+                "scale": {
+                    "enabled": false
+                }
+            }
+        }
+    ],
+    "animation_presets": {
+        "defaults": {
+            "fps": 15,
+            "target_width": 1920,
+            "width_options": [
+                1920,
+                1280,
+                720
+            ],
+            "webp_quality": 70,
+            "webp_method": 6,
+            "avif_crf": 32,
+            "avif_preset": 6,
+            "avif_encoder": "libsvtav1",
+            "gif_colors": 64,
+            "gif_lossy": 100,
+            "gif_dither": "bayer:bayer_scale=3"
+        }
+    }
+}
